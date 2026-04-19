@@ -70,6 +70,12 @@ class PPLApp:
         self.root.minsize(680, 640)
         self.root.configure(bg=COLORS["bg"])
 
+        # Start maximized (Windows/Linux: "zoomed"; macOS: fall back to full screen geometry)
+        try:
+            self.root.state("zoomed")
+        except tk.TclError:
+            self.root.attributes("-zoomed", True)
+
         self._setup_fonts()
         self._setup_styles()
         self._build_ui()
@@ -83,7 +89,7 @@ class PPLApp:
         self.f_section = tkfont.Font(family=family, size=11, weight="bold")
         self.f_body    = tkfont.Font(family=family, size=10)
         self.f_mono    = tkfont.Font(family="Consolas", size=11)
-        self.f_metric  = tkfont.Font(family=family, size=17, weight="bold")
+        self.f_metric  = tkfont.Font(family=family, size=14, weight="bold")
         self.f_verdict = tkfont.Font(family=family, size=13, weight="bold")
 
     def _setup_styles(self):
@@ -131,6 +137,7 @@ class PPLApp:
             background=COLORS["surface"],
             foreground=COLORS["primary"],
             font=self.f_metric,
+            padding=(0, 4, 0, 4),
         )
         style.configure("Verdict.TLabel",
             background=COLORS["surface"],
@@ -193,7 +200,7 @@ class PPLApp:
 
     # ---------- UI ----------
 
-    def _card(self, parent, px: int = 18, py: int = 16):
+    def _card(self, parent, px: int = 18, py: int = 18):
         """Create a card-style container with a 1px border and internal padding.
 
         Returns (outer, content) where outer should be packed into ``parent``
@@ -299,10 +306,22 @@ class PPLApp:
 
         # PPL metric block
         ppl_block = tk.Frame(result_row, bg=COLORS["surface"])
-        ppl_block.pack(side="left", fill="x", expand=True, anchor="w")
+        ppl_block.pack(side="left", anchor="w")
         ttk.Label(ppl_block, text="PERPLEXITY", style="Muted.TLabel").pack(anchor="w")
-        self.ppl_label = ttk.Label(ppl_block, text="—", style="Metric.TLabel", wraplength=300)
-        self.ppl_label.pack(anchor="w", pady=(2, 0))
+        self.ppl_label = tk.Label(
+            ppl_block,
+            text="—",
+            font=self.f_metric,
+            fg=COLORS["primary"],
+            bg="#EEF2FF",
+            anchor="w",
+            justify="left",
+            width=14,
+            height=1,
+            padx=10,
+            pady=6,
+        )
+        self.ppl_label.pack(anchor="w", pady=(6, 0))
 
         # Spacer
         tk.Frame(result_row, bg=COLORS["surface"], width=40).pack(side="left")
