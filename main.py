@@ -5,6 +5,11 @@ from tkinter import ttk, font as tkfont
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
 
 # ---- Color palette (modern dark-accent light theme) ----
 COLORS = {
@@ -295,6 +300,9 @@ class PPLApp:
         )
         self.calc_btn.pack(side="right")
 
+        self.visualize_btn = ttk.Button(ctrl, text="Visualize per-line PPL", style="Secondary.TButton", command=self._on_visualize, state="disabled")
+        self.visualize_btn.pack(side="right", padx=(0, 8))
+
         # ---- Result card ----
         result_outer, result_inner = self._card(container)
         result_outer.pack(fill="x", pady=(0, 14))
@@ -375,7 +383,9 @@ class PPLApp:
     def _restore_buttons(self):
         self.load_btn.config(state="normal")
         # Re-enable calculate only if a detector is available.
-        self.calc_btn.config(state="normal" if self.detector is not None else "disabled")
+        _state = "normal" if self.detector is not None else "disabled"
+        self.calc_btn.config(state=_state)
+        self.visualize_btn.config(state=_state)
 
     def _on_calculate(self):
         text = self.text_input.get("1.0", "end").strip()
@@ -419,6 +429,79 @@ class PPLApp:
         else:
             self.judge_label.config(text="Normal", foreground=COLORS["accent"])
             self._set_verdict_dot(COLORS["accent"])
+
+
+    def _on_visualize(self):
+        text = self.text_input.get("1.0", "end")
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines or self.detector is None:
+            self.status_var.set("Need a loaded model and at least one non-empty line.")
+            return
+        try:
+            threshold = float(self.threshold_var.get())
+        except ValueError:
+            threshold = None
+        self.calc_btn.config(state="disabled")
+        self.visualize_btn.config(state="disabled")
+        self.status_var.set(f"Calculating PPL for {len(lines)} lines...")
+        self.root.update_idletasks()
+
+        def _calc():
+            try:
+                ppls = [self.detector.calculate_ppl(ln) for ln in lines]
+                self.root.after(0, lambda: PPLDistributionWindow(self.root, lines, ppls, threshold))
+                self.root.after(0, lambda: self.status_var.set(f"Done. ({len(lines)} lines)"))
+            except Exception as e:
+                msg = str(e)
+                self.root.after(0, lambda: self.status_var.set(f"Error: {msg}"))
+            finally:
+                self.root.after(0, self._restore_buttons)
+
+        threading.Thread(target=_calc, daemon=True).start()
+
+
+class PPLDistributionWindow(tk.Toplevel):
+    def __init__(self, parent, lines, ppls, threshold=None):
+        super().__init__(parent)
+        self.title("Per-line PPL Distribution")
+        self.geometry("960x680")
+        self.configure(bg=COLORS["bg"])
+        n = len(ppls)
+        mean = sum(ppls) / n if n else 0.0
+        summary = f"lines: {n}   min: {min(ppls):.2f}   mean: {mean:.2f}   max: {max(ppls):.2f}"
+        if threshold is not None:
+            over = sum(1 for v in ppls if v > threshold)
+            summary += f"   threshold: {threshold:.2f}   anomalous: {over}"
+        tk.Label(self, text=summary, bg=COLORS["bg"], fg=COLORS["text"], anchor="w").pack(fill="x", padx=16, pady=(12, 4))
+        fig = Figure(figsize=(9, 5.4), dpi=100, facecolor=COLORS["surface"])
+        ax1 = fig.add_subplot(2, 1, 1)
+        colors = [COLORS["danger"] if (threshold is not None and v > threshold) else COLORS["primary"] for v in ppls]
+        ax1.bar(range(1, n + 1), ppls, color=colors)
+        if threshold is not None:
+            ax1.axhline(threshold, color=COLORS["danger"], linestyle="--", linewidth=1, label=f"threshold={threshold:.2f}")
+            ax1.legend(loc="upper right", frameon=False)
+        ax1.set_title("PPL per line")
+        ax1.set_xlabel("Line #")
+        ax1.set_ylabel("PPL")
+        ax1.spines["top"].set_visible(False)
+        ax1.spines["right"].set_visible(False)
+        ax2 = fig.add_subplot(2, 1, 2)
+        ax2.hist(ppls, bins=min(30, max(5, n)), color=COLORS["primary"], edgecolor="white")
+        if threshold is not None:
+            ax2.axvline(threshold, color=COLORS["danger"], linestyle="--", linewidth=1, label=f"threshold={threshold:.2f}")
+            ax2.legend(loc="upper right", frameon=False)
+        ax2.set_title("PPL distribution (histogram)")
+        ax2.set_xlabel("PPL")
+        ax2.set_ylabel("Count")
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        fig.tight_layout()
+        canvas = FigureCanvasTkAgg(fig, master=self)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        tb = NavigationToolbar2Tk(canvas, self, pack_toolbar=False)
+        tb.update()
+        tb.pack(fill="x", padx=12, pady=(0, 8))
 
 
 if __name__ == "__main__":
