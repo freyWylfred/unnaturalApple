@@ -1,7 +1,8 @@
-__pycache__/
+﻿__pycache__/
 *.pyc
 build/
 dist/
 *.spec
 *.egg-info/
 .env
+build*.log
